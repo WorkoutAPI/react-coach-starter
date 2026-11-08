@@ -41,7 +41,7 @@ pnpm db:generate
 pnpm dev
 ```
 
-Open **http://localhost:3000** and enter as a coach or client. Demo screens use fictional data and local exercise illustrations; they make no Workout API or PostgreSQL requests. Demo changes are transient, and submitted training does not alter the sample history or statistics.
+Open **http://localhost:3000** and enter as a coach or client. Demo screens use fictional data and local exercise illustrations; they make no Workout API or PostgreSQL requests. Each browser gets an isolated demo workspace, so its changes do not affect other visitors. Reloading the page resets that workspace; demo changes are transient, and submitted training does not alter the sample history or statistics.
 
 ## Run in live mode
 

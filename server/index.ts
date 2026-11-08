@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma, demo, hash, passwordHash, verifyPassword, publicUser, createSession, session, requireUser, requireCoach, type AuthedRequest } from './auth.js';
-import { demoUsers, demoPrograms, demoLogs, demoMessages, demoInvites, demoExercises, demoGenerate, demoTrainingSessions } from './demo.js';
+import { demoUsers, demoPrograms, demoLogs, demoMessages, demoInvites, demoExercises, demoGenerate, demoTrainingSessions, demoRequest, resetDemoWorkspace } from './demo.js';
 import * as workout from './lib/workoutapi/index.js';
 import { generation } from './generation.js';
 import { passwordResetEmail } from './email/templates/password-reset.js';
@@ -21,6 +21,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
+if (demo) app.use('/api', demoRequest);
 const authAttempts = new Map<string, { count: number; reset: number }>();
 app.use('/api/auth', (req, res, next) => {
   if (demo || req.method !== 'POST') return next();
@@ -46,6 +47,7 @@ const inviteInput = z.object({ name: z.string().trim().min(2).max(100), email: z
 const logInput = z.object({ programId: id, exerciseCode: id, sets: z.number().int().min(1).max(30), reps: z.number().int().min(1).max(1000), weightKg: z.number().min(0).max(10000).nullable().optional(), notes: z.string().max(2000).nullable().optional(), performedOn: z.iso.date().refine(value => value <= new Date(Date.now() + 86400000).toISOString().slice(0, 10)).optional() });
 
 app.get('/api/health', route(async (_req, res) => { if (!demo) await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, mode: demo ? 'demo' : 'live', workoutConfigured: !demo && !!process.env.WORKOUTAPI_KEY }); }));
+app.post('/api/demo/reset', route(async (_req, res) => { if (demo) resetDemoWorkspace(); res.json({ reset: demo }); }));
 app.get('/api/bootstrap', route(async (req, res) => { res.json({ mode: demo ? 'demo' : 'live', user: req.user || null, workoutConfigured: !demo && !!process.env.WORKOUTAPI_KEY }); }));
 app.post('/api/auth/demo-login', route(async (req, res) => { if (!demo) return res.status(404).json({ error: 'Demo mode is disabled.' }); const role = parse(z.enum(['COACH', 'CLIENT']), req.body.role); const user = demoUsers.find(u => u.role === role)!; await createSession(res, user.id); res.json({ user: publicUser(user) }); }));
 app.post('/api/auth/register', route(async (req, res) => { if (demo) return res.status(400).json({ error: 'Use demo sign in in demo mode.' }); const input = parse(credentials.extend({ name: z.string().trim().min(2).max(100) }), req.body); const user = await prisma.user.create({ data: { email: input.email, name: input.name, passwordHash: passwordHash(input.password), role: 'COACH' } }); await createSession(res, user.id); res.status(201).json({ user: publicUser(user) }); }));

@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { NextFunction, Request, Response } from 'express';
 import type { ProgramGenerateRequest } from '@workoutapi/sdk';
 
 export type DemoUser = { id: string; email: string; name: string; role: 'COACH' | 'CLIENT'; coachId: string | null; goal: string | null; notes: string | null; weightUnit: 'KG' | 'LB'; emailLocale: string; notifyMessages: boolean; notifyPrograms: boolean };
@@ -7,12 +9,12 @@ export type DemoLog = { id: string; clientId: string; programId: string; exercis
 export type DemoMessage = { id: string; senderId: string; recipientId: string; body: string; createdAt: string; readAt: string | null };
 export type DemoTrainingSession = { id: string; clientId: string; programId: string | null; status: 'IN_PROGRESS' | 'COMPLETED'; content: { programName: string; dayLabel: string; dayIndex: number; exercises: { code: string; name: string; targetSets: number | null; targetReps: string; restSeconds: number | null; sets: { reps: number; weightKg: number | null }[]; skipped: boolean; extra: boolean }[] }; startedAt: string; completedAt: string | null; updatedAt: string };
 
-export const demoUsers: DemoUser[] = [
+export let demoUsers: DemoUser[] = [
   { id: 'demo-coach', email: 'coach@demo.local', name: 'Alex Morgan', role: 'COACH', coachId: null, goal: null, notes: null, weightUnit: 'KG', emailLocale: 'en', notifyMessages: true, notifyPrograms: true },
   { id: 'demo-client', email: 'sam@demo.local', name: 'Sam Rivera', role: 'CLIENT', coachId: 'demo-coach', goal: 'STRENGTH', notes: 'Training three times a week', weightUnit: 'KG', emailLocale: 'en', notifyMessages: true, notifyPrograms: true },
   { id: 'demo-client-2', email: 'jordan@demo.local', name: 'Jordan Lee', role: 'CLIENT', coachId: 'demo-coach', goal: 'HYPERTROPHY', notes: 'Prefers dumbbells', weightUnit: 'KG', emailLocale: 'en', notifyMessages: true, notifyPrograms: true }
 ];
-export const demoExercises = [
+export let demoExercises = [
   { id: 'd-1', code: 'BARBELL_BENCH_PRESS', name: 'Barbell Bench Press', description: 'A compound chest press with a barbell.', primaryMuscles: [{ code: 'CHEST', name: 'Chest' }], categories: [{ code: 'FREE_WEIGHT', name: 'Free weight' }], types: [{ code: 'POLYARTICULAR', name: 'Compound' }] },
   { id: 'd-2', code: 'SEATED_CHEST_PRESS', name: 'Seated Chest Press', description: 'A seated machine press for the chest.', primaryMuscles: [{ code: 'CHEST', name: 'Chest' }], categories: [{ code: 'MACHINE', name: 'Machine' }], types: [{ code: 'POLYARTICULAR', name: 'Compound' }] },
   { id: 'd-3', code: 'DIPS', name: 'Dips', description: 'A bodyweight press for the triceps and chest.', primaryMuscles: [{ code: 'TRICEPS', name: 'Triceps' }], categories: [{ code: 'BODYWEIGHT', name: 'Bodyweight' }], types: [{ code: 'POLYARTICULAR', name: 'Compound' }] },
@@ -49,7 +51,7 @@ const demoProgramContent = (hypertrophy: boolean) => ({ days: demoSplit.map(day 
   nbReps: { min: plan.reps, max: plan.reps + 2 },
   restSeconds: { value: plan.restSeconds }
 })) })) });
-export const demoPrograms: DemoProgram[] = [
+export let demoPrograms: DemoProgram[] = [
   { id: 'demo-program', coachId: 'demo-coach', clientId: 'demo-client', apiProgramId: null, name: 'Strength foundations', description: 'A three-day push, legs and core, and pull plan for Sam.', status: 'ASSIGNED', content: demoProgramContent(false), shareUrl: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'demo-program-jordan', coachId: 'demo-coach', clientId: 'demo-client-2', apiProgramId: null, name: 'Consistent growth', description: 'A three-day hypertrophy plan for Jordan.', status: 'ASSIGNED', content: demoProgramContent(true), shareUrl: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
@@ -115,10 +117,105 @@ function demoHistory(clientId: string, programId: string, loadFactor: number) {
 }
 const samHistory = demoHistory('demo-client', 'demo-program', 1);
 const jordanHistory = demoHistory('demo-client-2', 'demo-program-jordan', 0.8);
-export const demoLogs: DemoLog[] = [...samHistory.logs, ...jordanHistory.logs].sort((a, b) => b.performedAt.localeCompare(a.performedAt));
-export const demoTrainingSessions: DemoTrainingSession[] = [...samHistory.sessions, ...jordanHistory.sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-export const demoMessages: DemoMessage[] = [{ id: 'demo-message', senderId: 'demo-coach', recipientId: 'demo-client', body: 'Great first session, Sam. Keep tracking your sets here.', createdAt: new Date(Date.now() - 3600000).toISOString(), readAt: null }];
-export const demoInvites: { token: string; email: string; name: string; goal?: string; coachId: string }[] = [];
+export let demoLogs: DemoLog[] = [...samHistory.logs, ...jordanHistory.logs].sort((a, b) => b.performedAt.localeCompare(a.performedAt));
+export let demoTrainingSessions: DemoTrainingSession[] = [...samHistory.sessions, ...jordanHistory.sessions].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+export let demoMessages: DemoMessage[] = [{ id: 'demo-message', senderId: 'demo-coach', recipientId: 'demo-client', body: 'Great first session, Sam. Keep tracking your sets here.', createdAt: new Date(Date.now() - 3600000).toISOString(), readAt: null }];
+export let demoInvites: { token: string; email: string; name: string; goal?: string; coachId: string }[] = [];
+
+type DemoState = {
+  users: DemoUser[];
+  programs: DemoProgram[];
+  logs: DemoLog[];
+  messages: DemoMessage[];
+  invites: typeof demoInvites;
+  exercises: typeof demoExercises;
+  trainingSessions: DemoTrainingSession[];
+};
+
+const demoStateSeed: DemoState = {
+  users: demoUsers,
+  programs: demoPrograms,
+  logs: demoLogs,
+  messages: demoMessages,
+  invites: demoInvites,
+  exercises: demoExercises,
+  trainingSessions: demoTrainingSessions
+};
+const demoStateStorage = new AsyncLocalStorage<DemoState>();
+const demoStates = new Map<string, { state: DemoState; lastSeen: number }>();
+const DEMO_STATE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_DEMO_VISITORS = 500;
+
+function scopedArray<T>(key: keyof DemoState, fallback: T[]): T[] {
+  return new Proxy(fallback, {
+    get(_target, property) {
+      const current = (demoStateStorage.getStore()?.[key] as T[] | undefined) || fallback;
+      const value = Reflect.get(current, property, current);
+      return typeof value === 'function' ? value.bind(current) : value;
+    },
+    set(_target, property, value) {
+      const current = (demoStateStorage.getStore()?.[key] as T[] | undefined) || fallback;
+      return Reflect.set(current, property, value, current);
+    },
+    deleteProperty(_target, property) {
+      const current = (demoStateStorage.getStore()?.[key] as T[] | undefined) || fallback;
+      return Reflect.deleteProperty(current, property);
+    },
+    ownKeys() {
+      return Reflect.ownKeys((demoStateStorage.getStore()?.[key] as T[] | undefined) || fallback);
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      const current = (demoStateStorage.getStore()?.[key] as T[] | undefined) || fallback;
+      const descriptor = Reflect.getOwnPropertyDescriptor(current, property);
+      if (!descriptor) return undefined;
+      return property === 'length' ? descriptor : { ...descriptor, configurable: true };
+    }
+  });
+}
+
+demoUsers = scopedArray('users', demoStateSeed.users);
+demoPrograms = scopedArray('programs', demoStateSeed.programs);
+demoLogs = scopedArray('logs', demoStateSeed.logs);
+demoMessages = scopedArray('messages', demoStateSeed.messages);
+demoInvites = scopedArray('invites', demoStateSeed.invites);
+demoExercises = scopedArray('exercises', demoStateSeed.exercises);
+demoTrainingSessions = scopedArray('trainingSessions', demoStateSeed.trainingSessions);
+
+export function demoRequest(req: Request, res: Response, next: NextFunction) {
+  const now = Date.now();
+  for (const [key, value] of demoStates) if (value.lastSeen + DEMO_STATE_TTL_MS <= now) demoStates.delete(key);
+
+  let visitorId = req.cookies?.demo_visitor;
+  if (typeof visitorId !== 'string' || !/^[0-9a-f-]{36}$/i.test(visitorId)) {
+    visitorId = randomUUID();
+    res.cookie('demo_visitor', visitorId, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: DEMO_STATE_TTL_MS
+    });
+  }
+
+  let entry = demoStates.get(visitorId);
+  if (!entry) {
+    while (demoStates.size >= MAX_DEMO_VISITORS) {
+      const oldest = [...demoStates.entries()].sort((a, b) => a[1].lastSeen - b[1].lastSeen)[0];
+      if (!oldest) break;
+      demoStates.delete(oldest[0]);
+    }
+    entry = { state: structuredClone(demoStateSeed), lastSeen: now };
+    demoStates.set(visitorId, entry);
+  }
+  entry.lastSeen = now;
+  demoStateStorage.run(entry.state, next);
+}
+
+export function resetDemoWorkspace() {
+  const current = demoStateStorage.getStore();
+  if (current) Object.assign(current, structuredClone(demoStateSeed));
+}
+
 export function demoGenerate(name: string, description: string | undefined, goal: string | undefined, days: ProgramGenerateRequest['days']) {
   return { id: randomUUID(), coachId: 'demo-coach', clientId: null, apiProgramId: null, name, description: description || null, status: 'DRAFT' as const, content: { days: days.map((day, index) => {
     const criteria = day.criteria || {};

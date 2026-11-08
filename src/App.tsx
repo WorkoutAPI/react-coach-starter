@@ -39,13 +39,23 @@ export function App() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountButtonRef = useRef<HTMLButtonElement>(null);
+  const initialization = useRef<Promise<void> | null>(null);
   const hydratedLanguageAccount = useRef<string | null>(null);
   const requestedLanguage = useRef<string | null>(null);
   const languageUpdates = useRef<Promise<void>>(Promise.resolve());
   const [dark, setDark] = useState(localStorage.getItem('coach-theme') === 'dark');
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const refresh = useCallback(async () => setBootstrap(await api<Bootstrap>('/bootstrap')), []);
-  useEffect(() => { refresh().catch(() => setNotice({ text: i18n.t('app.connection.error'), error: true })); }, [refresh, i18n]);
+  useEffect(() => {
+    if (!initialization.current) {
+      initialization.current = (async () => {
+        const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+        if (navigation?.type === 'reload') await api('/demo/reset', { method: 'POST', body: '{}' });
+        await refresh();
+      })();
+    }
+    initialization.current.catch(() => setNotice({ text: i18n.t('app.connection.error'), error: true }));
+  }, [refresh, i18n]);
   const accountId = bootstrap?.user?.id;
   const savedEmailLocale = bootstrap?.user?.emailLocale;
   useEffect(() => {
