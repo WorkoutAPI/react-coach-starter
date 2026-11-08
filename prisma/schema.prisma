@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum Role {
+  COACH
+  CLIENT
+}
+
+enum ProgramStatus {
+  DRAFT
+  ASSIGNED
+  ARCHIVED
+}
+
+enum TrainingSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum WeightUnit {
+  KG
+  LB
+}
+
+enum EmailJobKind {
+  MESSAGE
+  PROGRAM
+}
+
+enum EmailJobStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  passwordHash String?
+  name String
+  role Role
+  coachId String?
+  coach User? @relation("CoachClients", fields: [coachId], references: [id], onDelete: Cascade)
+  clients User[] @relation("CoachClients")
+  goal String?
+  notes String?
+  weightUnit WeightUnit @default(KG)
+  emailLocale String @default("en")
+  notifyMessages Boolean @default(true)
+  notifyPrograms Boolean @default(true)
+  createdAt DateTime @default(now())
+  sessions Session[]
+  passwordResets PasswordReset[]
+  programsCreated Program[] @relation("ProgramCoach")
+  programsAssigned Program[] @relation("ProgramClient")
+  messagesSent Message[] @relation("MessageSender")
+  messagesReceived Message[] @relation("MessageRecipient")
+  logs Performance[]
+  trainingSessions TrainingSession[]
+  emailJobs EmailJob[]
+}
+
+model Session {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model PasswordReset {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Invite {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  coachId String
+  email String
+  name String
+  goal String?
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([coachId])
+}
+
+model Program {
+  id String @id @default(cuid())
+  coachId String
+  coach User @relation("ProgramCoach", fields: [coachId], references: [id], onDelete: Cascade)
+  clientId String?
+  client User? @relation("ProgramClient", fields: [clientId], references: [id], onDelete: SetNull)
+  apiProgramId String?
+  name String
+  description String?
+  status ProgramStatus @default(DRAFT)
+  content Json
+  shareUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  logs Performance[]
+  trainingSessions TrainingSession[]
+  @@index([coachId])
+  @@index([clientId])
+}
+
+model Performance {
+  id String @id @default(cuid())
+  clientId String
+  client User @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  programId String
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  exerciseCode String
+  exerciseName String
+  sets Int
+  reps Int
+  weightKg Float?
+  performedAt DateTime @default(now())
+  performedOn DateTime @db.Date
+  notes String?
+  @@index([clientId, performedAt])
+}
+
+model TrainingSession {
+  id String @id @default(cuid())
+  clientId String
+  client User @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  programId String?
+  program Program? @relation(fields: [programId], references: [id], onDelete: SetNull)
+  status TrainingSessionStatus @default(IN_PROGRESS)
+  content Json
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  updatedAt DateTime @updatedAt
+  @@index([clientId, status, startedAt])
+}
+
+model Message {
+  id String @id @default(cuid())
+  senderId String
+  sender User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient User @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  body String
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([recipientId, createdAt])
+}
+
+model EmailJob {
+  id String @id @default(cuid())
+  kind EmailJobKind
+  status EmailJobStatus @default(PENDING)
+  recipientId String
+  recipient User @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  senderId String?
+  messageId String? @unique
+  programId String?
+  sendAfter DateTime
+  attempts Int @default(0)
+  lastAttemptAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([status, sendAfter])
+  @@index([recipientId, senderId, status])
+}

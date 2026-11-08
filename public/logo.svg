@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Dumbbell">
+  <rect width="64" height="64" rx="16" fill="#3B82F6"/>
+  <g fill="#fff" transform="rotate(45 32 32)">
+    <rect x="20" y="28" width="24" height="8" rx="2"/>
+    <rect x="11" y="17" width="12" height="30" rx="3"/>
+    <rect x="41" y="17" width="12" height="30" rx="3"/>
+    <rect x="4" y="21" width="5" height="22" rx="2"/>
+    <rect x="55" y="21" width="5" height="22" rx="2"/>
+  </g>
+</svg>
